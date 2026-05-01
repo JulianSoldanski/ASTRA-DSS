@@ -18,7 +18,6 @@ B2B procurement negotiations involve complex variables, shifting priorities, and
 * **Strategic Reasoning Engine:** Powered by state-of-the-art LLMs (GPT-4o, Claude 3.5, Gemini) to understand nuanced business dialogue and context.
 
 ## 🚀 Getting Started
-
 ### Prerequisites
 * **Python**: 3.10+
 * **API Keys**: Access to OpenAI, Anthropic, or Google Gemini APIs depending on the chosen reasoning engine.
