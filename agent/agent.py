@@ -79,7 +79,8 @@ class NegotiationAgent(DialogAgent):
         self.priority_consistency_checker = PriorityConsistencyChecker(
             agent=self,
             system_instruction=system_instruction,
-            verbose=self.inconsistency_verbose
+            verbose=self.inconsistency_verbose,
+            engine=self.engine
         )
         self.preference_asker = PartnerPreferenceAsker(
             prompt_builder=prompt_builder,
@@ -111,7 +112,7 @@ class NegotiationAgent(DialogAgent):
         """Ensure that the agent's setup is valid."""
         self.engine_STR = self.args.engine_STR # 'gpt-4o'
         assert isinstance(self.agent_value_off_table, dict), "agent_value_off_table must be a dictionary."
-        assert all(engine in ["gpt-4-turbo", "gpt-4o", "gpt-4o-mini"] for engine in [self.engine, self.engine_STR]), "Engine and engine_STR must be either 'gpt-4-turbo', 'gpt-4o', or 'gpt-4o-mini'"
+       # assert all(engine in ["gpt-4-turbo", "gpt-4o", "gpt-4o-mini"] for engine in [self.engine, self.engine_STR]), "Engine and engine_STR must be either 'gpt-4-turbo', 'gpt-4o', or 'gpt-4o-mini'"
 
     def setup_partner_information(self):
         """Initialize partner priorities and confirmation flags."""

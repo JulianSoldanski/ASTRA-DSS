@@ -46,7 +46,7 @@ class DialogAgent(object):
 
         if kwargs.get('model'): del kwargs['model']
 
-        if ("gpt" in self.engine):
+        if ("gpt" in engine):
             #logging.info("Calling GPT Engine - %s", engine)
 
             response = completion_with_backoff(
@@ -60,7 +60,7 @@ class DialogAgent(object):
             message = choices[0]['message'] if len(choices) == 1 else [c['message'] for c in choices]
             assert (choices[0]['message']['role'] == 'assistant')
 
-        elif ("gemini" in self.engine):
+        elif ("gemini" in engine):
             print("gemini-Engine")
             system_instruction, user_text = convert_to_gemini_messages(messages)
             response = completion_with_backoff_gemini(
@@ -74,7 +74,7 @@ class DialogAgent(object):
             choices = response['choices']
             message = choices[0]['message'] if len(choices) == 1 else [c['message'] for c in choices]
             assert (choices[0]['message']['role'] == 'assistant')
-        elif ('claude' in self.engine):
+        elif ('claude' in engine):
             print("claude engine")
             response = completion_with_backoff_claude(
                 model=engine,

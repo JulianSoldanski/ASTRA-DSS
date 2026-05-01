@@ -15,6 +15,7 @@ Features:
 import asyncio
 import json
 import os
+import time
 from typing import Dict, List, Tuple, Any, Union
 
 import anthropic
@@ -32,12 +33,15 @@ from tenacity import (
 )
 
 from errors import OutputPasingError
+from utils import convert_to_gemini_messages
 from utils import WPrinter
 
 # Configuration constants
 STOP_AFTER_ATTEMPT = 4
 RETRY_WAIT_INITIAL = 3
 RETRY_WAIT_FINAL = 5
+GEMINI_RETRY_WAIT_SECONDS = 30
+GEMINI_RETRY_MAX_ATTEMPTS = 5
 
 # Initialize global printer
 printer = WPrinter(verbose=True)
@@ -174,30 +178,55 @@ def completion_with_backoff_gemini(**kwargs) -> Dict[str, Any]:
     if checking_json:
         gen_config["response_mime_type"] = "application/json"
 
-    try:
-        response = gemini_client.models.generate_content(
-            model=model,
-            config=types.GenerateContentConfig(**gen_config),
-            contents=[user_text],
-        )
+    transient_error_markers = [
+        "503",
+        "429",
+        "UNAVAILABLE",
+        "RESOURCE_EXHAUSTED",
+        "SERVICE UNAVAILABLE",
+        "DEADLINE_EXCEEDED",
+        "TIMEOUT",
+    ]
 
-        # Convert to standardized format
-        standardized_response = {"choices": []}
-        for choice in response.candidates:
-            content = choice.content.parts[0].text.replace("json", " ").replace("`", "")
-            standardized_response["choices"].append(
-                {"message": {"role": "assistant", "content": content}}
+    for attempt in range(1, GEMINI_RETRY_MAX_ATTEMPTS + 1):
+        try:
+            response = gemini_client.models.generate_content(
+                model=model,
+                config=types.GenerateContentConfig(**gen_config),
+                contents=[user_text],
             )
 
-        if checking_json:
-            printer.wprint("Validating JSON response")
-            _validate_json_response(standardized_response)
+            # Convert to standardized format
+            standardized_response = {"choices": []}
+            for choice in response.candidates:
+                content = choice.content.parts[0].text.replace("json", " ").replace("`", "")
+                standardized_response["choices"].append(
+                    {"message": {"role": "assistant", "content": content}}
+                )
 
-        return standardized_response
+            if checking_json:
+                printer.wprint("Validating JSON response")
+                _validate_json_response(standardized_response)
 
-    except Exception as e:
-        printer.wprint(f"Error encountered: {e}. Retrying...")
-        raise
+            return standardized_response
+
+        except Exception as e:
+            error_text = str(e).upper()
+            is_transient = any(marker in error_text for marker in transient_error_markers)
+            has_next_attempt = attempt < GEMINI_RETRY_MAX_ATTEMPTS
+
+            if is_transient and has_next_attempt:
+                printer.wprint(
+                    f"Transient Gemini error (attempt {attempt}/{GEMINI_RETRY_MAX_ATTEMPTS}): {e}. "
+                    f"Waiting {GEMINI_RETRY_WAIT_SECONDS}s before retry."
+                )
+                time.sleep(GEMINI_RETRY_WAIT_SECONDS)
+                continue
+
+            printer.wprint(
+                f"Error encountered on attempt {attempt}/{GEMINI_RETRY_MAX_ATTEMPTS}: {e}"
+            )
+            raise
 
 
 def completion_with_backoff_claude(**kwargs) -> Dict[str, Any]:
@@ -427,9 +456,37 @@ async def call_multiple_apis(api_calls: List[Dict[str, Any]]) -> List[Any]:
         List of results from API calls (exceptions are returned as values)
     """
 
+    def _call_provider(params: Dict[str, Any]) -> Dict[str, Any]:
+        """Route sync provider calls by model name."""
+        model = str(params.get("model", "")).lower()
+
+        if "gemini" in model:
+            messages = params.get("messages", [])
+            system_instruction, user_text = convert_to_gemini_messages(messages)
+            return completion_with_backoff_gemini(
+                model=params["model"],
+                system_instruction=system_instruction,
+                user_text=user_text,
+                json_parsing_check=params.get("json_parsing_check", False),
+                verbose=params.get("verbose", False),
+                n=params.get("n", 1),
+            )
+
+        if "claude" in model:
+            return completion_with_backoff_claude(
+                model=params["model"],
+                messages=params["messages"],
+                json_parsing_check=params.get("json_parsing_check", False),
+                verbose=params.get("verbose", False),
+            )
+
+        # Default to OpenAI-compatible path
+        return completion_with_backoff(**params)
+
     async def safe_call(params: Dict[str, Any]) -> Any:
         try:
-            return await completion_with_backoff_async(**params)
+            loop = asyncio.get_running_loop()
+            return await loop.run_in_executor(None, lambda: _call_provider(params))
         except Exception as e:
             return e
 

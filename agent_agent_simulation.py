@@ -523,9 +523,13 @@ class AgentMaster:
                 if key == "agreement":
                     output["agreement_dist"] = Counter(output[key])
                 if key == "walk_away":
-                    output["Rate_Walk_Away"] = (
-                        len(output[key]) - output[key].count("null")
-                    ) / len(output[key])
+                    total_walk_away = len(output[key])
+                    if total_walk_away == 0:
+                        output["Rate_Walk_Away"] = None
+                    else:
+                        output["Rate_Walk_Away"] = (
+                            total_walk_away - output[key].count("null")
+                        ) / total_walk_away
             else:
                 values = [x for x in output[key] if x is not None]
                 if values:
